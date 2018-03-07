@@ -1,0 +1,131 @@
+##############################################################
+maSigPro is a R package for the analysis of single and multiseries time course microarray
+experiments. maSigPro follows a two steps regression strategy to find genes with significant
+temporal expression changes and significant differences between experimetal groups.
+The method defines a general regression model for the data where the experimental groups
+are identified by dummy variables. The procedure first adjusts this global model by the
+least-squared technique to identify differentially expressed genes and selects significant genes
+applying false discovery rate control procedures. Secondly, stepwise regression is applied as
+a variable selection strategy to study differences between experimental groups and to find
+statistically significant different profiles. The coefficients obtained in this second regression
+model will be useful to cluster together significant genes with similar expression patterns and
+to visualize the results.
+
+Reference ____________ for proper formatting tutorials of the data and experimental design input
+
+##############################################################
+if ("maSigPro" %in% rownames(installed.packages()) == FALSE){
+        install.packages("maSigPro")
+}
+
+library(maSigPro)
+
+args <- commandArgs(TRUE)
+
+cat("data =", args[1])
+cat("edesign =", args[2])
+
+data <- read.delim(args[1], row.names=1)
+edesign <- read.delim(args[2], row.names=1)
+
+################
+# make.design.matrix creates the design matrix of dummies for fitting time series micorarray
+# gene expression experiments.
+
+# the degrees of freedom equals 1 less than the total number of timepoints
+
+deg <- length(unique(edesign[, 1])) - 1
+
+design <- make.design.matrix(edesign, degree = deg)
+
+
+################
+# User will be prompted to define the minimum observation threshold that will be used in the first analysis.
+# Genes with less non-zero values in the experiment will be excluded from the analysis.
+# Minimum value is recommended to be (#ofTimePoints) x (#ofGroups) + 1
+
+readinteger <- function()
+{ 
+  n <- readline(prompt="Minimum Observation Threshold: ")
+  if(!grepl("^[0-9]+$",n))
+  {
+    return(readinteger())
+  }
+  
+  return(as.integer(n))
+}
+minob <- readinteger()
+cat("min.obs =", minob)
+
+#################
+# User will be prompted to define the step method that will be used in the second analysis.
+# The step method can be defined as "backward", "forward", "two.ways.backward", or "two.ways.forward".
+# The step method indicates how variables in the regression model will be added or dropped based on significance.
+
+readstringstep <- function()
+{
+  s <- readline(prompt="Enter Step Method: ")
+  stepverification <- vector(mode = "logical", length = 4)
+  stepverification[1] <- identical(s, "backward")
+  stepverification[2] <- identical(s, "forward")
+  stepverification[3] <- identical(s, "two.ways.backward")
+  stepverification[4] <- identical(s, "two.ways.forward")
+  if(length(unique(stepverification)) != 2)
+  {
+    return(readstringstep())
+  }
+  return(s)
+}
+stepmethod <- readstringstep()
+cat("step.method =", stepmethod)  
+
+##################
+# User will be prompted to define the domain relative to which significant genes will be extracted.
+# This variable can be defined as "all", "each", or "groups".
+# "all" generates one single matrix or gene list will all significant genes.
+# "each" generates as many significant genes extractions as variables in the general regression model.
+# "groups" generates a significant genes extraction for each experimental group.
+
+readstringvars <- function()
+{
+  v <- readline(prompt="Enter Extraction Variable size: ")
+  varsverification <- vector(mode = "logical", length = 3)
+  varsverification[1] <- identical(v, "all")
+  varsverification[2] <- identical(v, "each")
+  varsverification[3] <- identical(v, "groups")
+  if(length(unique(stepverification)) != 2)
+  {
+    return(readstringvars())
+  }
+  return(v)
+}
+variable <- readstringvars()
+cat("vars =", variable)
+
+##################
+# p.vector performs a regression fit for each gene taking all variables present in the model given
+# by a regression matrix and returns a list of FDR corrected significant genes.
+# Q is the significance level
+
+fit <- p.vector(data, design, Q = 0.05, min.obs = minob)
+
+##################
+# T.fit selects the best regression model for each gene using sgepwise regression.
+# alfa is the significance level used for variable selection in the stepwise regression.
+
+tstep <- T.fit(fit, step.method = stepmethod, alfa = 0.05)
+
+##################
+# get.siggenes creates lists of significant genes for a set of variables whose significance value has been
+# computed with the T.fit function. rsq is the cut-off level at the R-squared value for the
+# stepwise regression fit. Only genes with R-squared more than rsq are selected 
+
+sigs <- get.siggenes(tstep, rsq = 0.6, vars = variable)
+
+##################
+# The lists of significant genes will be written to a text file that will need to be manually edited
+# if the user intends to functionally enrich the lists. To use the next script, the user will need to
+# delete the first column and row of the text file. This should leave just the significant genes in the file
+# without a number index.
+
+write.table(sigs$summary, "siggenes", sep = "\t", quote = FALSE)
